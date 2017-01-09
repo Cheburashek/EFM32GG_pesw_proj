@@ -18,10 +18,18 @@
 #include "em_device.h"
 #include "em_chip.h"
 #include "em_cmu.h"
+#include "em_prs.h"
+#include "em_gpio.h"
 #include "bsp.h"
 #include "bsp_trace.h"
 
 #include "display.h"
+#include "adc.h"
+
+#define PB0_PORT                gpioPortB
+#define PB0_PIN                 9
+
+
 
 volatile uint32_t msTicks; /* counts 1ms timeTicks */
 
@@ -53,6 +61,19 @@ void Delay(uint32_t dlyTicks)
 }
 
 
+void setupPRS(void)
+{
+  /* Use PRS location 0 and output PRS channel 0 on GPIO PORTA0. */
+  PRS->ROUTE = 0x01U;
+
+  /* PRS channel 0 configuration. */
+  PRS_SourceAsyncSignalSet(
+		  0U,
+		  PRS_CH_CTRL_SOURCESEL_GPIOL,		// TODO?
+		  PRS_CH_CTRL_SIGSEL_ADC0SINGLE
+		  );
+}
+
 /**************************************************************************//**
  * @brief  Main function
  *****************************************************************************/
@@ -69,8 +90,19 @@ int main(void)
   if (SysTick_Config(CMU_ClockFreqGet(cmuClock_CORE) / 1000)) while (1) ;
 
 
-  display_Init();
 
+  /* Enable GPIO clock. */
+  CMU_ClockEnable(cmuClock_GPIO, true);
+
+  /* Configure PB9 as input and enable interrupt. (PB0) */
+  GPIO_PinModeSet(PB0_PORT, PB0_PIN, gpioModeInputPull, 1);
+  GPIO_IntConfig(PB0_PORT, PB0_PIN, false, true, true);
+
+
+
+
+  display_Init();
+  adc_Init ();
   BSP_LedSet(1);
 
   /* Infinite loop with test pattern. */

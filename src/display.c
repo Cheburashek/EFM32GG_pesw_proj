@@ -16,3 +16,7 @@ void display_Init ( void )
 	SegmentLCD_Init(false);
 }
 
+void display_AdcSet ( uint32_t data )
+{
+	SegmentLCD_Number ( (uint32_t)data );
+}
