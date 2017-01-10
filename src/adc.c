@@ -118,12 +118,11 @@ void ADC0_IRQHandler(void)
 {
 	uint32_t flags;
 
-	BSP_LedToggle (0);
+//	BSP_LedToggle (0);
 
 	/* Clear interrupt flags */
 	flags = ADC_IntGet(ADC0);
 	ADC_IntClear(ADC0, flags);
-
 	dataReadyFlag = true;
 }
 

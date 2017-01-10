@@ -133,8 +133,9 @@ static void setupLeuart(void)
   LEUART0->ROUTE = LEUART_ROUTE_RXPEN | LEUART_ROUTE_TXPEN | LEUART_LOCATION;
 
   /* Set RXDMAWU to wake up the DMA controller in EM2 */
-  LEUART_RxDmaInEM2Enable(LEUART0, true);
+  //LEUART_RxDmaInEM2Enable(LEUART0, true);
 
   /* Finally enable it */
   LEUART_Enable(LEUART0, leuartEnable);
 }
+

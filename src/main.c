@@ -25,10 +25,12 @@
 #include "em_gpio.h"
 #include "bsp.h"
 #include "bsp_trace.h"
+#include "gpiointerrupt.h"
 
 #include "display.h"
 #include "adc.h"
-#include "gpiointerrupt.h"
+#include "serial.h"
+
 
 #define PB0_PORT                gpioPortB
 #define PB0_PIN                 9
@@ -75,14 +77,14 @@ static void setupPRS(void)
 {
   CMU_ClockEnable(cmuClock_PRS, true);
 
-  /* Use PRS location 0 and output PRS channel 0 on GPIO PORTA0. */
+  /* Use PRS location 0 and output PRS channel 0 on GPIO PORTB. */
   PRS->ROUTE = PRS_ROUTE_CH1PEN;
 
   /* PRS channel 0 configuration. */
   PRS_SourceSignalSet(
 		  PRS_ADC_CHANNEL,
-		  PRS_CH_CTRL_SOURCESEL_GPIOL,		// TODO?
-		  PRS_CH_CTRL_SIGSEL_GPIOPIN0,
+		  PRS_CH_CTRL_SOURCESEL_GPIOH,		// TODO?
+		  PRS_CH_CTRL_SIGSEL_GPIOPIN10,
 		  prsEdgeNeg
 		  );
 }
@@ -93,30 +95,29 @@ static void gpioInit ( void )
 	CMU_ClockEnable(cmuClock_GPIO, true);
 
 	/* Configure PB9 as input and enable interrupt. (PB0) */
-	GPIO_PinModeSet(PB0_PORT, PB0_PIN, gpioModeInput, 0);
-	GPIO_IntConfig(PB0_PORT, PB0_PIN, false, true, true);
-	//  GPIO_ExtIntConfig (PB0_PORT, PB0_PIN, 1,  false, true, true );
+//	GPIO_PinModeSet(PB0_PORT, PB0_PIN, gpioModeInput, 0);
+//	GPIO_IntConfig(PB0_PORT, PB0_PIN, false, true, true);
+
 	/* Configure PB9 as input and enable interrupt. (PB0) */
 	GPIO_PinModeSet(PB1_PORT, PB1_PIN, gpioModeInput, 0);
 	GPIO_IntConfig(PB1_PORT, PB1_PIN, false, true, true);
-	//  GPIO_ExtIntConfig (PB1_PORT, PB1_PIN, 1,  false, true, true );
+
 
 	GPIOINT_Init();
-	GPIOINT_CallbackRegister(PB0_PIN, gpioCallback);
+//	GPIOINT_CallbackRegister(PB0_PIN, gpioCallback);
 	GPIOINT_CallbackRegister(PB1_PIN, gpioCallback);
 
-	//  GPIO_InputSenseSet( GPIO_INSENSE_PRS, GPIO_INSENSE_PRS );
 }
 
 static void gpioCallback ( uint8_t pin )	// TODO: only temporary solution while problem with prs exists
 {
-	if (pin == 9)
-	{
-		adc_StartSingle();
-	}
-	else if (pin == 10)
+	if (pin == PB0_PIN)
 	{
 
+	}
+	else if (pin == PB1_PIN)
+	{
+		adc_StartSingle();	// TODO: do dokumentacji - u¿ycie PSR nie ma sensu, bo ADC i tak nie dzia³a w EM2, a prs z zasady ma dzia³aæ bez wybudzania procka.
 	}
 }
 
@@ -150,36 +151,38 @@ int main(void)
 
   gpioInit();
 
-  //setupPRS();
+//  setupPRS();
 
+  serial_Init();
   display_Init();
   adc_Init ();
-  BSP_LedSet(1);
+//  BSP_LedSet(1);
 
   display_AdcValSet(1234);
 
   /* Infinite loop with test pattern. */
   while (1)
   {
-	  if ( adc_GetDataReadyFlag() )
+	  EMU_EnterEM2(false);	// EM2 for LCD usage
+
+	  while ( !adc_GetDataReadyFlag() ){EMU_EnterEM1();}	// Wait for data ready flag
+
+	  valTab[currentMeasId] = adc_GetVal_mV();
+
+	  if ( currentMeasId == (ADC_VALUES_TAB_SIZE-1) ) // When mean value shall be calculated and shown on LCD
 	  {
-		  valTab[currentMeasId] = adc_GetVal_mV();
+		  display_AdcValSet ( getMeanVal() );	// Show mean value on LCD
+	  }
+	  currentMeasId++;
 
-		  if ( currentMeasId == (ADC_VALUES_TAB_SIZE-1) ) // When mean value shall be calculated and shown on LCD
-		  {
-			  display_AdcValSet ( getMeanVal() );	// Show mean value on LCD
-		  }
-		  currentMeasId++;
-
-		  if ( ADC_VALUES_TAB_SIZE == currentMeasId )
-		  {
-			  currentMeasId = 0;
-		  }
-
-		  adc_ClearDataReadyFlag();
+	  if ( ADC_VALUES_TAB_SIZE == currentMeasId )
+	  {
+		  currentMeasId = 0;
 	  }
 
-	  EMU_EnterEM2(false);	// EM2 for LCD usage
+	  adc_ClearDataReadyFlag();
+
+
   }
 }
 
