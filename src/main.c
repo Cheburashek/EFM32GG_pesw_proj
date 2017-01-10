@@ -13,10 +13,13 @@
  *
  ******************************************************************************/
 
+//E:\Studia\Pesw\EFM32GG_pesw_proj\GNU ARM v4.9.3 - Debug\proj_Pesw_2.hex
+
 #include <stdint.h>
 #include <stdbool.h>
 #include "em_device.h"
 #include "em_chip.h"
+#include "em_emu.h"
 #include "em_cmu.h"
 #include "em_prs.h"
 #include "em_gpio.h"
@@ -25,16 +28,23 @@
 
 #include "display.h"
 #include "adc.h"
+#include "gpiointerrupt.h"
 
 #define PB0_PORT                gpioPortB
 #define PB0_PIN                 9
-
-
+#define PB1_PORT                gpioPortB
+#define PB1_PIN                 10
+#define ADC_VALUES_TAB_SIZE 	5
 
 volatile uint32_t msTicks; /* counts 1ms timeTicks */
+static uint32_t valTab[ADC_VALUES_TAB_SIZE];
+static uint8_t currentMeasId = 0;
 
 /* Locatl prototypes */
-void Delay(uint32_t dlyTicks);
+static void Delay(uint32_t dlyTicks);
+static void gpioCallback ( uint8_t pin );
+static void gpioInit ( void );
+static uint32_t getMeanVal ( void );
 
 /**************************************************************************//**
  * @brief SysTick_Handler
@@ -61,17 +71,64 @@ void Delay(uint32_t dlyTicks)
 }
 
 
-void setupPRS(void)
+static void setupPRS(void)
 {
+  CMU_ClockEnable(cmuClock_PRS, true);
+
   /* Use PRS location 0 and output PRS channel 0 on GPIO PORTA0. */
-  PRS->ROUTE = 0x01U;
+  PRS->ROUTE = PRS_ROUTE_CH1PEN;
 
   /* PRS channel 0 configuration. */
-  PRS_SourceAsyncSignalSet(
-		  0U,
+  PRS_SourceSignalSet(
+		  PRS_ADC_CHANNEL,
 		  PRS_CH_CTRL_SOURCESEL_GPIOL,		// TODO?
-		  PRS_CH_CTRL_SIGSEL_ADC0SINGLE
+		  PRS_CH_CTRL_SIGSEL_GPIOPIN0,
+		  prsEdgeNeg
 		  );
+}
+
+static void gpioInit ( void )
+{
+	/* Enable GPIO clock. */
+	CMU_ClockEnable(cmuClock_GPIO, true);
+
+	/* Configure PB9 as input and enable interrupt. (PB0) */
+	GPIO_PinModeSet(PB0_PORT, PB0_PIN, gpioModeInput, 0);
+	GPIO_IntConfig(PB0_PORT, PB0_PIN, false, true, true);
+	//  GPIO_ExtIntConfig (PB0_PORT, PB0_PIN, 1,  false, true, true );
+	/* Configure PB9 as input and enable interrupt. (PB0) */
+	GPIO_PinModeSet(PB1_PORT, PB1_PIN, gpioModeInput, 0);
+	GPIO_IntConfig(PB1_PORT, PB1_PIN, false, true, true);
+	//  GPIO_ExtIntConfig (PB1_PORT, PB1_PIN, 1,  false, true, true );
+
+	GPIOINT_Init();
+	GPIOINT_CallbackRegister(PB0_PIN, gpioCallback);
+	GPIOINT_CallbackRegister(PB1_PIN, gpioCallback);
+
+	//  GPIO_InputSenseSet( GPIO_INSENSE_PRS, GPIO_INSENSE_PRS );
+}
+
+static void gpioCallback ( uint8_t pin )	// TODO: only temporary solution while problem with prs exists
+{
+	if (pin == 9)
+	{
+		adc_StartSingle();
+	}
+	else if (pin == 10)
+	{
+
+	}
+}
+
+static uint32_t getMeanVal ( void )
+{
+    uint32_t meanVal = 0;
+
+	for ( uint8_t i = 0; i < ADC_VALUES_TAB_SIZE; i++ )
+	{
+		meanVal += valTab[i];
+	}
+	return (meanVal / ADC_VALUES_TAB_SIZE);
 }
 
 /**************************************************************************//**
@@ -85,29 +142,45 @@ int main(void)
   /* If first word of user data page is non-zero, enable eA Profiler trace */
   BSP_TraceProfilerSetup();
   BSP_LedsInit();
+  BSP_LedClear(0);
+  BSP_LedClear(1);
 
   /* Setup SysTick Timer for 1 msec interrupts  */
   if (SysTick_Config(CMU_ClockFreqGet(cmuClock_CORE) / 1000)) while (1) ;
 
+  gpioInit();
 
-
-  /* Enable GPIO clock. */
-  CMU_ClockEnable(cmuClock_GPIO, true);
-
-  /* Configure PB9 as input and enable interrupt. (PB0) */
-  GPIO_PinModeSet(PB0_PORT, PB0_PIN, gpioModeInputPull, 1);
-  GPIO_IntConfig(PB0_PORT, PB0_PIN, false, true, true);
-
-
-
+  //setupPRS();
 
   display_Init();
   adc_Init ();
   BSP_LedSet(1);
 
+  display_AdcValSet(1234);
+
   /* Infinite loop with test pattern. */
   while (1)
   {
+	  if ( adc_GetDataReadyFlag() )
+	  {
+		  valTab[currentMeasId] = adc_GetVal_mV();
 
+		  if ( currentMeasId == (ADC_VALUES_TAB_SIZE-1) ) // When mean value shall be calculated and shown on LCD
+		  {
+			  display_AdcValSet ( getMeanVal() );	// Show mean value on LCD
+		  }
+		  currentMeasId++;
+
+		  if ( ADC_VALUES_TAB_SIZE == currentMeasId )
+		  {
+			  currentMeasId = 0;
+		  }
+
+		  adc_ClearDataReadyFlag();
+	  }
+
+	  EMU_EnterEM2(false);	// EM2 for LCD usage
   }
 }
+
+

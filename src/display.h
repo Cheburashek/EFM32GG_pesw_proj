@@ -12,7 +12,7 @@
 #include <stdbool.h>
 
 void display_Init ( void );
-void display_AdcSet ( uint32_t data );
+void display_AdcValSet ( uint32_t data );
 
 
 #endif /* SRC_DISPLAY_H_ */

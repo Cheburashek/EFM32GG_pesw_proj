@@ -11,7 +11,12 @@
 #include "em_cmu.h"
 #include "bsp.h"
 
-volatile uint32_t val;
+
+#define ADC_RESOLUTION 		adcRes12Bit
+#define ADC_REFERENCE_V		adcRef2V5
+
+static bool dataReadyFlag = false;
+
 
 void adc_Init ( void )
 {
@@ -27,10 +32,10 @@ void adc_Init ( void )
 	ADC_Init ( ADC0, &initStr );
 
 	ADC_InitSingle_TypeDef singleInitStr = {
-			.prsSel 	= adcPRSSELCh0,
+			.prsSel 	= PRS_ADC_CHANNEL,
 			.acqTime 	= adcAcqTime4,
-			.reference 	= adcRef2V5,	// TODO?
-			.resolution = adcRes12Bit,
+			.reference 	= ADC_REFERENCE_V,	// TODO?
+			.resolution = ADC_RESOLUTION,
 			.input 		= adcSingleInputCh0,
 			.diff 		= false,
 			.prsEnable	= true,
@@ -47,9 +52,67 @@ void adc_Init ( void )
 	NVIC_ClearPendingIRQ ( ADC0_IRQn );
 	NVIC_EnableIRQ(ADC0_IRQn);
 
-	ADC_Start ( ADC0, adcStartSingle );
 }
 
+bool adc_GetDataReadyFlag ( void )
+{
+	return dataReadyFlag;
+}
+
+void adc_ClearDataReadyFlag ( void )
+{
+	dataReadyFlag = false;
+}
+
+uint32_t adc_GetVal ( void )
+{
+	return ADC_DataSingleGet(ADC0);
+}
+
+uint32_t adc_GetVal_mV ( void )
+{
+	uint16_t res = 0;
+	uint16_t ref = 0;
+
+	switch ( ADC_RESOLUTION )
+	{
+	case adcRes12Bit:
+		res = 0x0FFF;
+		break;
+
+	case adcRes8Bit:
+		res = 0x00FF;
+		break;
+
+	case adcRes6Bit:
+		res = 0x003F;
+		break;
+
+	default:
+		break;
+	}
+
+	switch ( ADC_REFERENCE_V )
+	{
+	case adcRef1V25:
+		ref = 1250;
+		break;
+
+	case adcRef2V5:
+		ref = 2500;
+		break;
+
+	default:
+		break;
+	}
+
+	return (ADC_DataSingleGet(ADC0)*ref) / res;
+}
+
+void adc_StartSingle ( void )
+{
+	ADC_Start ( ADC0, adcStartSingle );
+}
 
 void ADC0_IRQHandler(void)
 {
@@ -61,8 +124,6 @@ void ADC0_IRQHandler(void)
 	flags = ADC_IntGet(ADC0);
 	ADC_IntClear(ADC0, flags);
 
-	val = ADC_DataSingleGet ( ADC0 );
-	display_AdcSet ( val );
-	ADC_Start ( ADC0, adcStartSingle );
+	dataReadyFlag = true;
 }
 
