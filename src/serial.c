@@ -5,8 +5,8 @@
  *      Author: Cheburashek
  */
 
+#include <stdlib.h>
 #include "serial.h"
-#include "em_leuart.h"
 #include "em_dma.h"
 #include "dmactrl.h"
 #include "em_device.h"
@@ -21,18 +21,30 @@
 #define LEUART_RXPORT      gpioPortD            /* LEUART reception port */
 #define LEUART_RXPIN       5                    /* LEUART reception pin */
 
+#define SERIAL_SYNC_BYTE	0xAA
+#define PACKET_BASE_SIZE	3		// prefix + opcode + len
+
+#define TX_BUFFER_SIZE		32
+#define RX_BUFF_SIZE		64
+
+
+static uint8_t pTxBuffer[TX_BUFFER_SIZE];
+volatile static uint8_t *pTxToSend;
+volatile static uint16_t dataToSend;
+static packetRxCompleteCb_t packetRxCompleteCb;
 
 static void setupDma(void);
 static void setupLeuart(void);
-
+static void rxDataParser ( uint8_t data );
 
 void serial_Init ( void )
 {
+	pTxToSend = pTxBuffer;
 	/* Initialize LEUART */
 	setupLeuart();
 
 	/* Setup DMA */
-	setupDma();
+//	setupDma();
 }
 
 
@@ -104,38 +116,161 @@ static void setupDma(void)
 
 static void setupLeuart(void)
 {
-  /* Enable peripheral clocks */
-  CMU_ClockEnable(cmuClock_HFPER, true);
-  /* Configure GPIO pins */
-  CMU_ClockEnable(cmuClock_GPIO, true);
-  /* To avoid false start, configure output as high */
-  GPIO_PinModeSet(LEUART_TXPORT, LEUART_TXPIN, gpioModePushPull, 1);
-  GPIO_PinModeSet(LEUART_RXPORT, LEUART_RXPIN, gpioModeInput, 0);
+	/* Enable peripheral clocks */
+	CMU_ClockEnable(cmuClock_HFPER, true);
+	/* Configure GPIO pins */
+	CMU_ClockEnable(cmuClock_GPIO, true);
+	/* To avoid false start, configure output as high */
+	GPIO_PinModeSet(LEUART_TXPORT, LEUART_TXPIN, gpioModePushPull, 1);
+	GPIO_PinModeSet(LEUART_RXPORT, LEUART_RXPIN, gpioModeInput, 0);
 
-  LEUART_Init_TypeDef init = LEUART_INIT_DEFAULT;
+	LEUART_Init_TypeDef init = LEUART_INIT_DEFAULT;
 
-  /* Enable CORE LE clock in order to access LE modules */
-  CMU_ClockEnable(cmuClock_CORELE, true);
+	/* Enable CORE LE clock in order to access LE modules */
+	CMU_ClockEnable(cmuClock_CORELE, true);
 
-  /* Select LFXO for LEUARTs (and wait for it to stabilize) */
-  CMU_ClockSelectSet(cmuClock_LFB, cmuSelect_LFXO);
-  CMU_ClockEnable(cmuClock_LEUART0, true);
+	/* Select LFXO for LEUARTs (and wait for it to stabilize) */
+	CMU_ClockSelectSet(cmuClock_LFB, cmuSelect_LFXO);
+	CMU_ClockEnable(cmuClock_LEUART0, true);
 
-  /* Do not prescale clock */
-  CMU_ClockDivSet(cmuClock_LEUART0, cmuClkDiv_1);
+	/* Do not prescale clock */
+	CMU_ClockDivSet(cmuClock_LEUART0, cmuClkDiv_1);
 
-  /* Configure LEUART */
-  init.enable = leuartDisable;
+	/* Configure LEUART */
+	init.enable = leuartDisable;
 
-  LEUART_Init(LEUART0, &init);
+	LEUART_Init(LEUART0, &init);
 
-  /* Enable pins at default location */
-  LEUART0->ROUTE = LEUART_ROUTE_RXPEN | LEUART_ROUTE_TXPEN | LEUART_LOCATION;
+	/* Enable pins at default location */
+	LEUART0->ROUTE = LEUART_ROUTE_RXPEN | LEUART_ROUTE_TXPEN | LEUART_LOCATION;
 
-  /* Set RXDMAWU to wake up the DMA controller in EM2 */
-  //LEUART_RxDmaInEM2Enable(LEUART0, true);
+	/* Set RXDMAWU to wake up the DMA controller in EM2 */
+	//LEUART_RxDmaInEM2Enable(LEUART0, true);
+
+	LEUART_IntEnable ( LEUART0, LEUART_IEN_TXC | LEUART_IEN_RXDATAV );	// Enable tx complete and rx data int
+	NVIC_ClearPendingIRQ ( LEUART0_IRQn );
+	NVIC_EnableIRQ ( LEUART0_IRQn );
 
   /* Finally enable it */
-  LEUART_Enable(LEUART0, leuartEnable);
+//	LEUART_Enable(LEUART0, leuartEnable);
 }
 
+bool serial_SendPacket ( uint8_t *pData, uint16_t len, uint8_t opCode )
+{
+	bool retVal = false;
+	uint8_t *pTemp = NULL;
+	pTemp = malloc ( len + PACKET_BASE_SIZE );
+
+	if ( pTemp )
+	{
+		pTemp[0] = SERIAL_SYNC_BYTE;
+		pTemp[1] = opCode;
+		pTemp[2] = len;
+
+		memcpy ( pTemp + PACKET_BASE_SIZE, pData, len );
+		retVal = serial_SendData ( pTemp, len + PACKET_BASE_SIZE );
+		free ( pTemp );
+	}
+	return retVal;
+}
+
+bool serial_SendData ( uint8_t *pData, uint16_t len )
+{
+	if ( pData && len && (len <= (TX_BUFFER_SIZE-dataToSend)) )
+	{
+		memcpy ( pTxToSend, pData, len );
+
+		dataToSend += len;
+		if ( pTxBuffer == pTxToSend )	// When first data to send from buffer
+		{
+			SERIAL_ENABLE_TX();
+			LEUART_Tx ( LEUART0, *pTxToSend );
+			pTxToSend++;
+			dataToSend--;
+		}
+		return true;
+	}
+	return false;
+}
+
+void LEUART0_IRQHandler ( void )
+{
+	uint32_t flags;
+	flags = LEUART_IntGet ( LEUART0 );
+
+	if ( LEUART_IF_TXC == (flags & LEUART_IF_TXC) )
+	{
+		if ( dataToSend )
+		{
+			LEUART_Tx ( LEUART0, *pTxToSend );
+			pTxToSend++;
+			dataToSend--;
+		}
+		else
+		{
+			pTxToSend = pTxBuffer;
+			SERIAL_DISABLE_TX();
+		}
+
+		LEUART_IntClear ( LEUART0, LEUART_IF_TXC );
+	}
+	if ( LEUART_IF_RXDATAV == (flags & LEUART_IF_RXDATAV) )
+	{
+		rxDataParser ( LEUART_RxDataGet(LEUART0) );
+		LEUART_IntClear ( LEUART0, LEUART_IF_RXDATAV );
+	}
+
+}
+
+static void rxDataParser ( uint8_t data )
+{
+	static uint8_t rxBuff[RX_BUFF_SIZE];
+	static uint16_t rxActLen = 0;
+	static uint16_t actPacketLen = 0;
+	static uint8_t actOpCode = 0;
+
+	if ( (SERIAL_SYNC_BYTE == data) && (0 == rxActLen) )
+	{
+		rxActLen++;
+	}
+	else if ( 1 == rxActLen )
+	{
+		actOpCode = data;
+		rxActLen++;
+	}
+	else if ( 2 == rxActLen )
+	{
+		actPacketLen = data;
+		rxActLen++;
+	}
+	else if ( 3 <= rxActLen )
+	{
+		rxBuff[rxActLen-PACKET_BASE_SIZE] = data;
+		rxActLen++;
+		if ( actPacketLen == (rxActLen-PACKET_BASE_SIZE) )	// When end of packet
+		{
+
+			if ( packetRxCompleteCb )
+			{
+				packetRxCompleteCb ( actOpCode, rxBuff, actPacketLen );
+			}
+			rxActLen = 0;
+		}
+	}
+
+	if ( rxActLen > RX_BUFF_SIZE )
+	{
+		rxActLen = 0;	// Big problem
+	}
+
+}
+
+void serial_RxPacketCompleteCbSet ( packetRxCompleteCb_t cb )
+{
+	packetRxCompleteCb = cb;
+}
+
+void serial_SetMode ( LEUART_Enable_TypeDef mode )
+{
+	LEUART_Enable ( LEUART0, mode );
+}
