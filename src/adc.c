@@ -6,7 +6,6 @@
  */
 
 #include "adc.h"
-#include "display.h"
 #include "em_adc.h"
 #include "em_cmu.h"
 #include "bsp.h"
@@ -15,8 +14,7 @@
 #define ADC_RESOLUTION 		adcRes12Bit
 #define ADC_REFERENCE_V		adcRef2V5
 
-static bool dataReadyFlag = false;
-
+static bool convInProgressFlag = false;
 
 void adc_Init ( void )
 {
@@ -54,14 +52,9 @@ void adc_Init ( void )
 
 }
 
-bool adc_GetDataReadyFlag ( void )
+bool adc_IsConvInProgress ( void )
 {
-	return dataReadyFlag;
-}
-
-void adc_ClearDataReadyFlag ( void )
-{
-	dataReadyFlag = false;
+	return convInProgressFlag;
 }
 
 uint32_t adc_GetVal ( void )
@@ -112,6 +105,7 @@ uint32_t adc_GetVal_mV ( void )
 void adc_StartSingle ( void )
 {
 	ADC_Start ( ADC0, adcStartSingle );
+	convInProgressFlag = true;
 }
 
 void ADC0_IRQHandler(void)
@@ -123,6 +117,6 @@ void ADC0_IRQHandler(void)
 	/* Clear interrupt flags */
 	flags = ADC_IntGet(ADC0);
 	ADC_IntClear(ADC0, flags);
-	dataReadyFlag = true;
+	convInProgressFlag = false;
 }
 

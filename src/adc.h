@@ -13,8 +13,7 @@
 #define PRS_ADC_CHANNEL	adcPRSSELCh0
 
 void adc_Init ( void );
-void adc_ClearDataReadyFlag ( void );
-bool adc_GetDataReadyFlag ( void );
+bool adc_IsConvInProgress ( void );
 uint32_t adc_GetVal ( void );
 uint32_t adc_GetVal_mV ( void );
 void adc_StartSingle ( void );

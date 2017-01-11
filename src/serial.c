@@ -262,7 +262,6 @@ static void rxDataParser ( uint8_t data )
 	{
 		rxActLen = 0;	// Big problem
 	}
-
 }
 
 void serial_RxPacketCompleteCbSet ( packetRxCompleteCb_t cb )

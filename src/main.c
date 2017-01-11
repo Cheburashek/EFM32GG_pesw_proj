@@ -53,7 +53,7 @@ static void calcMeanVal ( uint32_t *pVal );
 static void masterApplication ( void );
 static void slaveApplication ( void );
 static void packetReceivedCb ( uint8_t opCode, uint8_t *pData , uint8_t len );
-static void sendPacketAdcUint16 ( uint16_t val );
+static bool sendPacketAdcUint16 ( uint16_t val );
 
 volatile uint32_t msTicks; /* counts 1ms timeTicks */
 static uint32_t valTab[ADC_VALUES_TAB_SIZE];
@@ -91,7 +91,6 @@ int main(void)
   }
   SegmentLCD_Init(false);
 
-
   // Initializing modules and starting proper application loop:
   if ( DEV_MODE_MASTER == devMode )
   {
@@ -114,10 +113,6 @@ int main(void)
   }
 
 //  setupPRS();
-
-
-
-
 }
 
 //**************************************************************************
@@ -129,8 +124,10 @@ static void masterApplication ( void )
 	{
 	  EMU_EnterEM2(false);	// EM2 for LCD usage
 
-	  while ( !adc_GetDataReadyFlag() ){EMU_EnterEM1();}	// Wait for data ready flag
-
+	  while ( adc_IsConvInProgress() )	// Wait while adc conversion is in progress
+	  {
+		  EMU_EnterEM1();	// TODO: do opisu : porównaæ z i bez
+	  }
 	  valTab[currentMeasId] = adc_GetVal_mV();
 
 	  if ( currentMeasId == (ADC_VALUES_TAB_SIZE-1) ) // When mean value shall be calculated and shown on LCD
@@ -144,16 +141,16 @@ static void masterApplication ( void )
 	  {
 		  currentMeasId = 0;
 	  }
-
-	  adc_ClearDataReadyFlag();
 	}
 }
 
 //**************************************************************************
 static void slaveApplication ( void )
 {
-
-
+	while (1)
+	{
+		EMU_EnterEM2(false);	// EM2 for LCD usage
+	}
 }
 
 
@@ -269,9 +266,9 @@ static void packetReceivedCb ( uint8_t opCode, uint8_t *pData , uint8_t len )
 }
 
 //**************************************************************************
-static void sendPacketAdcUint16 ( uint16_t val )
+static bool sendPacketAdcUint16 ( uint16_t val )
 {
 	uint8_t temp[sizeof(uint16_t)] = { (meanVal&0xFF00)>>8, (meanVal&0x00FF)>>00 };
-	serial_SendPacket ( temp, sizeof(temp), SERIAL_ADCDATA_UINT16_OPCODE );
+	return serial_SendPacket ( temp, sizeof(temp), SERIAL_ADCDATA_UINT16_OPCODE );
 }
 
