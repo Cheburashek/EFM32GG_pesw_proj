@@ -104,8 +104,8 @@ uint32_t adc_GetVal_mV ( void )
 
 void adc_StartSingle ( void )
 {
-	ADC_Start ( ADC0, adcStartSingle );
 	convInProgressFlag = true;
+	ADC_Start ( ADC0, adcStartSingle );
 }
 
 void ADC0_IRQHandler(void)

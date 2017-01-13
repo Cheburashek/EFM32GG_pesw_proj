@@ -145,7 +145,7 @@ static void setupLeuart(void)
 	LEUART0->ROUTE = LEUART_ROUTE_RXPEN | LEUART_ROUTE_TXPEN | LEUART_LOCATION;
 
 	/* Set RXDMAWU to wake up the DMA controller in EM2 */
-	//LEUART_RxDmaInEM2Enable(LEUART0, true);
+	LEUART_RxDmaInEM2Enable(LEUART0, true);
 
 	LEUART_IntEnable ( LEUART0, LEUART_IEN_TXC | LEUART_IEN_RXDATAV );	// Enable tx complete and rx data int
 	NVIC_ClearPendingIRQ ( LEUART0_IRQn );
@@ -219,7 +219,6 @@ void LEUART0_IRQHandler ( void )
 		rxDataParser ( LEUART_RxDataGet(LEUART0) );
 		LEUART_IntClear ( LEUART0, LEUART_IF_RXDATAV );
 	}
-
 }
 
 static void rxDataParser ( uint8_t data )

@@ -122,25 +122,30 @@ static void masterApplication ( void )
 
 	while (1)
 	{
-	  EMU_EnterEM2(false);	// EM2 for LCD usage
+		EMU_EnterEM2(false);	// EM2 for LCD usage
 
-	  while ( adc_IsConvInProgress() )	// Wait while adc conversion is in progress
-	  {
-		  EMU_EnterEM1();	// TODO: do opisu : porównaæ z i bez
-	  }
-	  valTab[currentMeasId] = adc_GetVal_mV();
+		if ( 0 == GPIO_PinInGet(PB0_PORT, PB0_PIN) )
+		{
+			adc_StartSingle();	// TODO: do dokumentacji - u¿ycie PSR nie ma sensu, bo ADC i tak nie dzia³a w EM2, a prs z zasady ma dzia³aæ bez wybudzania procka.
 
-	  if ( currentMeasId == (ADC_VALUES_TAB_SIZE-1) ) // When mean value shall be calculated and shown on LCD
-	  {
-		  calcMeanVal ( &meanVal );
-		  SegmentLCD_Number ( meanVal );	// Show mean value on LCD
-	  }
-	  currentMeasId++;
+			while ( adc_IsConvInProgress() )	// Wait while adc conversion is in progress
+			{
+			  EMU_EnterEM1();	// TODO: do opisu : porównaæ z i bez
+			}
+			valTab[currentMeasId] = adc_GetVal_mV();
 
-	  if ( ADC_VALUES_TAB_SIZE == currentMeasId )
-	  {
-		  currentMeasId = 0;
-	  }
+			if ( currentMeasId == (ADC_VALUES_TAB_SIZE-1) ) // When mean value shall be calculated and shown on LCD
+			{
+			  calcMeanVal ( &meanVal );
+			  SegmentLCD_Number ( meanVal );	// Show mean value on LCD
+			}
+			currentMeasId++;
+
+			if ( ADC_VALUES_TAB_SIZE == currentMeasId )
+			{
+			  currentMeasId = 0;
+			}
+		}
 	}
 }
 
@@ -152,8 +157,6 @@ static void slaveApplication ( void )
 		EMU_EnterEM2(false);	// EM2 for LCD usage
 	}
 }
-
-
 
 /**************************************************************************//**
  * @brief SysTick_Handler
@@ -216,8 +219,8 @@ static void gpioInterruptsInit ( void )
 	GPIO_IntConfig(PB0_PORT, PB0_PIN, false, true, true);
 
 	GPIOINT_Init();
+//	GPIOINT_CallbackRegister(PB0_PIN, gpioCallback);
 	GPIOINT_CallbackRegister(PB1_PIN, gpioCallback);
-	GPIOINT_CallbackRegister(PB0_PIN, gpioCallback);
 }
 
 //**************************************************************************
@@ -227,7 +230,6 @@ static void gpioCallback ( uint8_t pin )	// TODO: only temporary solution while 
 	{
 		if ( DEV_MODE_MASTER == devMode )
 		{
-			adc_StartSingle();	// TODO: do dokumentacji - u¿ycie PSR nie ma sensu, bo ADC i tak nie dzia³a w EM2, a prs z zasady ma dzia³aæ bez wybudzania procka.
 		}
 
 	}
